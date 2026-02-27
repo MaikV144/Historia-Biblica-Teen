@@ -13,7 +13,6 @@ import {
   type Challenge,
   INITIAL_CARDS,
   INITIAL_BOARDS,
-  INITIAL_CONTACTS,
   INITIAL_CHALLENGES,
 } from "@/lib/card-data"
 import { getOrCreateUsuarioByAuthUserId } from "@/lib/user-repository" // [MODIFICADO]
@@ -23,7 +22,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("collection")
   const [collectionCards, setCollectionCards] = useState<Card[]>(INITIAL_CARDS)
   const [boardCards, setBoardCards] = useState<Card[]>(INITIAL_CARDS)
-  const [contacts, setContacts] = useState<Contact[]>(INITIAL_CONTACTS)
+  const [contacts, setContacts] = useState<Contact[]>([]) // [MODIFICADO] Empezar vacío, cargar de DB
   const [challenges, setChallenges] = useState<Challenge[]>(INITIAL_CHALLENGES)
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null)
   const [authUserId, setAuthUserId] = useState<string | null>(null) // [MODIFICADO]
@@ -63,6 +62,7 @@ export default function Home() {
     if (!authUserId) {
       setUserId(null)
       setUserCode(null)
+      setProfileAvatar(null)
       return
     }
     ;(async () => {
@@ -70,9 +70,29 @@ export default function Home() {
       if (usuario) {
         setUserId(usuario.id)
         setUserCode(usuario.codigo_amigo ?? `USER${usuario.id}`)
+        setProfileAvatar(usuario.foto_perfil ?? null) // [MODIFICADO] Cargar foto guardada
       }
     })()
   }, [authUserId])
+
+  // [MODIFICADO] Guardar foto de perfil en Supabase cuando cambia
+  const handleProfileAvatarChange = useCallback((imageUrl: string | null) => {
+    setProfileAvatar(imageUrl)
+    if (!userId) return
+    ;(async () => {
+      try {
+        const { error } = await supabase
+          .from("usuarios")
+          .update({ foto_perfil: imageUrl })
+          .eq("id", userId)
+        if (error) {
+          console.error("Error guardando foto de perfil:", error)
+        }
+      } catch (err) {
+        console.error("Error inesperado guardando foto de perfil:", err)
+      }
+    })()
+  }, [userId])
 
   // Sincronizar foto de perfil al servidor para que otros la vean
   useEffect(() => {
@@ -134,31 +154,140 @@ export default function Home() {
     })()
   }, [userId])
 
+  // [MODIFICADO] Eliminar contacto en Supabase
   const handleDeleteContact = useCallback((contactId: string) => {
     setContacts((prev) => prev.filter((c) => c.id !== contactId))
-  }, [])
+    
+    if (!userId) return
+    const numericId = parseInt(contactId.replace("contact-", ""), 10)
+    if (Number.isNaN(numericId)) return
 
+    ;(async () => {
+      try {
+        const { error } = await supabase
+          .from("contactos")
+          .delete()
+          .eq("id", numericId)
+          .eq("usuario_id", userId)
+        if (error) {
+          console.error("Error eliminando contacto:", error)
+        }
+      } catch (err) {
+        console.error("Error inesperado eliminando contacto:", err)
+      }
+    })()
+  }, [userId])
+
+  // [MODIFICADO] Agregar contacto en Supabase
   const handleAddContact = useCallback((name: string, remoteCode?: string) => {
-    const newContact: Contact = {
-      id: `contact-${Date.now()}`,
-      name,
-      avatar: name.charAt(0).toUpperCase(),
-      cardsOwned: 0,
-      ...(remoteCode && { remoteCode: remoteCode.trim().toUpperCase() }),
+    if (!userId) {
+      const newContact: Contact = {
+        id: `contact-${Date.now()}`,
+        name,
+        avatar: name.charAt(0).toUpperCase(),
+        cardsOwned: 0,
+        ...(remoteCode && { remoteCode: remoteCode.trim().toUpperCase() }),
+      }
+      setContacts((prev) => [...prev, newContact])
+      return
     }
-    setContacts((prev) => [...prev, newContact])
-  }, [])
 
+    ;(async () => {
+      try {
+        const { data: inserted, error } = await supabase
+          .from("contactos")
+          .insert({
+            usuario_id: userId,
+            nombre: name,
+            codigo_remoto: remoteCode ? remoteCode.trim().toUpperCase() : null,
+            cartas_intercambiadas: 0,
+          })
+          .select("id, nombre, codigo_remoto, cartas_intercambiadas")
+          .single()
+
+        if (error) {
+          console.error("Error guardando contacto:", error)
+          return
+        }
+
+        if (inserted) {
+          const newContact: Contact = {
+            id: `contact-${inserted.id}`,
+            name: inserted.nombre,
+            avatar: inserted.nombre.charAt(0).toUpperCase(),
+            cardsOwned: inserted.cartas_intercambiadas ?? 0,
+            ...(inserted.codigo_remoto && { remoteCode: inserted.codigo_remoto }),
+          }
+          setContacts((prev) => [...prev, newContact])
+        }
+      } catch (err) {
+        console.error("Error inesperado guardando contacto:", err)
+      }
+    })()
+  }, [userId])
+
+  // [MODIFICADO] Intercambiar carta - quitar de colección y actualizar en DB
   const handleTrade = useCallback((contactId: string, cardId: string) => {
+    // Quitar carta de ambas listas locales
+    setCollectionCards((prev) =>
+      prev.map((c) => (c.id === cardId ? { ...c, collected: false } : c))
+    )
     setBoardCards((prev) =>
       prev.map((c) => (c.id === cardId ? { ...c, collected: false } : c))
     )
+    // Incrementar cartas del contacto
     setContacts((prev) =>
       prev.map((c) =>
         c.id === contactId ? { ...c, cardsOwned: c.cardsOwned + 1 } : c
       )
     )
-  }, [])
+
+    if (!userId) return
+
+    const numericCardId = parseInt(cardId.replace("card-", ""), 10)
+    const numericContactId = parseInt(contactId.replace("contact-", ""), 10)
+
+    ;(async () => {
+      try {
+        // Quitar carta de colección en DB
+        if (!Number.isNaN(numericCardId)) {
+          const { error: colError } = await supabase
+            .from("coleccion")
+            .update({ desbloqueada: false })
+            .eq("usuario_id", userId)
+            .eq("carta_id", numericCardId)
+          if (colError) {
+            console.error("Error quitando carta de coleccion:", colError)
+          }
+        }
+
+        // Actualizar cartas_intercambiadas del contacto en DB
+        if (!Number.isNaN(numericContactId)) {
+          const { data: contactRow, error: fetchError } = await supabase
+            .from("contactos")
+            .select("cartas_intercambiadas")
+            .eq("id", numericContactId)
+            .eq("usuario_id", userId)
+            .maybeSingle()
+
+          if (fetchError) {
+            console.error("Error leyendo contacto:", fetchError)
+          } else if (contactRow) {
+            const newCount = (contactRow.cartas_intercambiadas ?? 0) + 1
+            const { error: updateError } = await supabase
+              .from("contactos")
+              .update({ cartas_intercambiadas: newCount })
+              .eq("id", numericContactId)
+            if (updateError) {
+              console.error("Error actualizando cartas_intercambiadas:", updateError)
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error inesperado en intercambio:", err)
+      }
+    })()
+  }, [userId])
 
   const handleAcceptIncomingTrade = useCallback((cardId: string) => {
     setBoardCards((prev) =>
@@ -167,7 +296,44 @@ export default function Home() {
     setCollectionCards((prev) =>
       prev.map((c) => (c.id === cardId ? { ...c, collected: true } : c))
     )
-  }, [])
+
+    // [MODIFICADO] Guardar carta recibida en DB
+    if (!userId) return
+    const numericId = parseInt(cardId.replace("card-", ""), 10)
+    if (Number.isNaN(numericId)) return
+
+    ;(async () => {
+      try {
+        const { data: existing, error: selectError } = await supabase
+          .from("coleccion")
+          .select("id,desbloqueada")
+          .eq("usuario_id", userId)
+          .eq("carta_id", numericId)
+          .maybeSingle()
+
+        if (selectError) {
+          console.error("Error leyendo coleccion:", selectError)
+          return
+        }
+
+        if (existing) {
+          if (!existing.desbloqueada) {
+            await supabase
+              .from("coleccion")
+              .update({ desbloqueada: true })
+              .eq("id", existing.id)
+          }
+          return
+        }
+
+        await supabase
+          .from("coleccion")
+          .insert({ usuario_id: userId, carta_id: numericId, desbloqueada: true })
+      } catch (error) {
+        console.error("Error guardando carta recibida:", error)
+      }
+    })()
+  }, [userId])
 
   const handleCompleteChallenge = useCallback((challengeId: string) => {
     setChallenges((prev) => {
@@ -272,12 +438,13 @@ export default function Home() {
     })()
   }, [userId])
 
-  // [MODIFICADO] Cargar progreso cuando userId cambia
+  // [MODIFICADO] Cargar progreso y contactos cuando userId cambia
   useEffect(() => {
     if (!userId) return
 
     ;(async () => {
       try {
+        // Cargar colección
         const { data: coleccionRows, error: coleccionError } = await supabase
           .from("coleccion")
           .select("carta_id,desbloqueada")
@@ -298,6 +465,7 @@ export default function Home() {
           )
         }
 
+        // Cargar desafíos
         const { data: desafiosRows, error: desafiosError } = await supabase
           .from("desafios_usuario")
           .select("desafio_id,completado")
@@ -313,6 +481,30 @@ export default function Home() {
           setChallenges((prev) =>
             prev.map((c) => (completedIds.has(c.id) ? { ...c, completed: true } : c))
           )
+        }
+
+        // [MODIFICADO] Cargar contactos
+        const { data: contactosRows, error: contactosError } = await supabase
+          .from("contactos")
+          .select("id, nombre, codigo_remoto, cartas_intercambiadas")
+          .eq("usuario_id", userId)
+
+        if (contactosError) {
+          console.error("Error cargando contactos:", contactosError)
+        } else if (contactosRows) {
+          const loadedContacts: Contact[] = contactosRows.map((row: {
+            id: number
+            nombre: string
+            codigo_remoto: string | null
+            cartas_intercambiadas: number | null
+          }) => ({
+            id: `contact-${row.id}`,
+            name: row.nombre,
+            avatar: row.nombre.charAt(0).toUpperCase(),
+            cardsOwned: row.cartas_intercambiadas ?? 0,
+            ...(row.codigo_remoto && { remoteCode: row.codigo_remoto }),
+          }))
+          setContacts(loadedContacts)
         }
       } catch (error) {
         console.error("Error inesperado cargando progreso desde Supabase:", error)
@@ -331,9 +523,11 @@ export default function Home() {
     setAuthUserId(null)
     setUserId(null)
     setUserCode(null)
+    setProfileAvatar(null)
     setCollectionCards(INITIAL_CARDS)
     setBoardCards(INITIAL_CARDS)
     setChallenges(INITIAL_CHALLENGES)
+    setContacts([])
   }
 
   if (cargando) {
@@ -375,7 +569,7 @@ export default function Home() {
             cards={boardCards}
             userCode={userCode ?? ""}
             profileAvatar={profileAvatar}
-            onProfileAvatarChange={setProfileAvatar}
+            onProfileAvatarChange={handleProfileAvatarChange}
             onAddContact={handleAddContact}
             onTrade={handleTrade}
             onAcceptIncomingTrade={handleAcceptIncomingTrade}
