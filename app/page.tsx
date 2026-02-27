@@ -1,4 +1,4 @@
- "use client"
+"use client"
 
 import { useState, useCallback, useEffect } from "react"
 import { BottomTabs, type TabId } from "@/components/bottom-tabs"
@@ -7,7 +7,7 @@ import { BoardsTab } from "@/components/boards-tab"
 import { ContactsTab } from "@/components/contacts-tab"
 import { ChallengesTab } from "@/components/challenges-tab"
 import { AuthGate } from "@/components/auth-gate" // [MODIFICADO]
-import { getOrCreateUserCode } from "@/lib/user-code" // [MODIFICADO]
+import { getUserCode } from "@/lib/user-code" // [MODIFICADO]
 import {
   type Card,
   type Contact,
@@ -16,9 +16,9 @@ import {
   INITIAL_BOARDS,
   INITIAL_CONTACTS,
   INITIAL_CHALLENGES,
-} from "@/lib/card-data" // [MODIFICADO]
-import { getOrCreateUsuarioByAuthUserId } from "@/lib/user-repository" // [MODIFICADO]
-import { supabase } from "@/lib/supabase-client" // [MODIFICADO]
+} from "@/lib/card-data"
+import { getOrCreateUsuarioByDeviceId } from "@/lib/user-repository" // [MODIFICADO]
+import { supabase } from "@/lib/supabase-client"
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("collection")
@@ -28,13 +28,24 @@ export default function Home() {
   const [challenges, setChallenges] = useState<Challenge[]>(INITIAL_CHALLENGES)
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null)
   const [userCode, setUserCode] = useState<string | null>(null)
-  const [userId, setUserId] = useState<number | null>(null) // [MODIFICADO]
-  const [authListo, setAuthListo] = useState(false) // [MODIFICADO]
-  const [autenticado, setAutenticado] = useState(false) // [MODIFICADO]
+  const [userId, setUserId] = useState<number | null>(null)
+  const [cargando, setCargando] = useState(true) // [MODIFICADO]
 
-  useEffect(() => {
-    setUserCode(getOrCreateUserCode()) // [MODIFICADO]
+  useEffect(() => { // [MODIFICADO]
+    const code = getUserCode() // [MODIFICADO]
+    if (code) { // [MODIFICADO]
+      setUserCode(code) // [MODIFICADO]
+    } // [MODIFICADO]
+    setCargando(false) // [MODIFICADO]
   }, []) // [MODIFICADO]
+
+  useEffect(() => { // [MODIFICADO]
+    if (!userCode) return // [MODIFICADO]
+    ;(async () => { // [MODIFICADO]
+      const usuario = await getOrCreateUsuarioByDeviceId(userCode) // [MODIFICADO]
+      setUserId(usuario ? usuario.id : null) // [MODIFICADO]
+    })() // [MODIFICADO]
+  }, [userCode]) // [MODIFICADO]
 
   // Sincronizar foto de perfil al servidor para que otros la vean
   useEffect(() => {
@@ -46,98 +57,55 @@ export default function Home() {
     }).catch(() => {})
   }, [userCode, profileAvatar])
 
-  useEffect(() => { // [MODIFICADO]
-    let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null // [MODIFICADO]
-
-    ;(async () => { // [MODIFICADO]
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession() // [MODIFICADO]
-      if (sessionError) { // [MODIFICADO]
-        console.error("Error obteniendo sesión:", sessionError) // [MODIFICADO]
-      } // [MODIFICADO]
-
-      const session = sessionData?.session ?? null // [MODIFICADO]
-      const user = session?.user ?? null // [MODIFICADO]
-      setAutenticado(!!user) // [MODIFICADO]
-
-      if (user) { // [MODIFICADO]
-        const usuario = await getOrCreateUsuarioByAuthUserId(user.id, userCode ?? undefined) // [MODIFICADO]
-        setUserId(usuario ? usuario.id : null) // [MODIFICADO]
-      } else { // [MODIFICADO]
-        setUserId(null) // [MODIFICADO]
-      } // [MODIFICADO]
-
-      setAuthListo(true) // [MODIFICADO]
-    })() // [MODIFICADO]
-
-    unsub = supabase.auth.onAuthStateChange(async (_event, session) => { // [MODIFICADO]
-      const user = session?.user ?? null // [MODIFICADO]
-      setAutenticado(!!user) // [MODIFICADO]
-      if (user) { // [MODIFICADO]
-        const usuario = await getOrCreateUsuarioByAuthUserId(user.id, userCode ?? undefined) // [MODIFICADO]
-        setUserId(usuario ? usuario.id : null) // [MODIFICADO]
-      } else { // [MODIFICADO]
-        setUserId(null) // [MODIFICADO]
-      } // [MODIFICADO]
-      setAuthListo(true) // [MODIFICADO]
-    }) // [MODIFICADO]
-
-    return () => { // [MODIFICADO]
-      if (unsub) { // [MODIFICADO]
-        unsub.data.subscription.unsubscribe() // [MODIFICADO]
-      } // [MODIFICADO]
-    } // [MODIFICADO]
-  }, [userCode]) // [MODIFICADO]
-
   const handleCollectCard = useCallback((cardId: string) => {
     setCollectionCards((prev) =>
       prev.map((c) => (c.id === cardId ? { ...c, collected: true } : c))
     )
-    // [MODIFICADO] Vincular colección a tablero: misma carta desbloqueada en Tableros
     setBoardCards((prev) =>
       prev.map((c) => (c.id === cardId ? { ...c, collected: true } : c))
     )
 
-    if (!userId) return // [MODIFICADO]
-    const numericId = parseInt(cardId.replace("card-", ""), 10) // [MODIFICADO]
-    if (Number.isNaN(numericId)) return // [MODIFICADO]
+    if (!userId) return
+    const numericId = parseInt(cardId.replace("card-", ""), 10)
+    if (Number.isNaN(numericId)) return
 
-    ;(async () => { // [MODIFICADO]
-      try { // [MODIFICADO]
-        const { data: existing, error: selectError } = await supabase // [MODIFICADO]
-          .from("coleccion") // [MODIFICADO]
-          .select("id,desbloqueada") // [MODIFICADO]
-          .eq("usuario_id", userId) // [MODIFICADO]
-          .eq("carta_id", numericId) // [MODIFICADO]
-          .maybeSingle() // [MODIFICADO]
+    ;(async () => {
+      try {
+        const { data: existing, error: selectError } = await supabase
+          .from("coleccion")
+          .select("id,desbloqueada")
+          .eq("usuario_id", userId)
+          .eq("carta_id", numericId)
+          .maybeSingle()
 
-        if (selectError) { // [MODIFICADO]
-          console.error("Error leyendo coleccion:", selectError) // [MODIFICADO]
-          return // [MODIFICADO]
-        } // [MODIFICADO]
+        if (selectError) {
+          console.error("Error leyendo coleccion:", selectError)
+          return
+        }
 
-        if (existing) { // [MODIFICADO]
-          if (existing.desbloqueada) return // [MODIFICADO]
-          const { error: updateError } = await supabase // [MODIFICADO]
-            .from("coleccion") // [MODIFICADO]
-            .update({ desbloqueada: true }) // [MODIFICADO]
-            .eq("id", existing.id) // [MODIFICADO]
-          if (updateError) { // [MODIFICADO]
-            console.error("Error actualizando coleccion:", updateError) // [MODIFICADO]
-          } // [MODIFICADO]
-          return // [MODIFICADO]
-        } // [MODIFICADO]
+        if (existing) {
+          if (existing.desbloqueada) return
+          const { error: updateError } = await supabase
+            .from("coleccion")
+            .update({ desbloqueada: true })
+            .eq("id", existing.id)
+          if (updateError) {
+            console.error("Error actualizando coleccion:", updateError)
+          }
+          return
+        }
 
-        const { error: insertError } = await supabase // [MODIFICADO]
-          .from("coleccion") // [MODIFICADO]
-          .insert({ usuario_id: userId, carta_id: numericId, desbloqueada: true }) // [MODIFICADO]
-        if (insertError) { // [MODIFICADO]
-          console.error("Error insertando coleccion:", insertError) // [MODIFICADO]
-        } // [MODIFICADO]
-      } catch (error) { // [MODIFICADO]
-        console.error("Error inesperado guardando coleccion:", error) // [MODIFICADO]
-      } // [MODIFICADO]
-    })() // [MODIFICADO]
-  }, [userId]) // [MODIFICADO]
+        const { error: insertError } = await supabase
+          .from("coleccion")
+          .insert({ usuario_id: userId, carta_id: numericId, desbloqueada: true })
+        if (insertError) {
+          console.error("Error insertando coleccion:", insertError)
+        }
+      } catch (error) {
+        console.error("Error inesperado guardando coleccion:", error)
+      }
+    })()
+  }, [userId])
 
   const handleDeleteContact = useCallback((contactId: string) => {
     setContacts((prev) => prev.filter((c) => c.id !== contactId))
@@ -187,7 +155,6 @@ export default function Home() {
             card.id === cardId ? { ...card, collected: true } : card
           )
         )
-        // [MODIFICADO] Vincular desafíos a colección: carta desbloqueada por desafío también en Mi colección
         setCollectionCards((prev) =>
           prev.map((c) => (c.id === cardId ? { ...c, collected: true } : c))
         )
@@ -195,144 +162,156 @@ export default function Home() {
       return updated
     })
 
-    if (!userId) return // [MODIFICADO]
-    const numericId = parseInt(challengeId.replace("challenge-", ""), 10) // [MODIFICADO]
-    if (Number.isNaN(numericId)) return // [MODIFICADO]
+    if (!userId) return
+    const numericId = parseInt(challengeId.replace("challenge-", ""), 10)
+    if (Number.isNaN(numericId)) return
 
-    ;(async () => { // [MODIFICADO]
-      try { // [MODIFICADO]
-        const { data: existing, error: selectError } = await supabase // [MODIFICADO]
-          .from("desafios_usuario") // [MODIFICADO]
-          .select("id,completado") // [MODIFICADO]
-          .eq("usuario_id", userId) // [MODIFICADO]
-          .eq("desafio_id", numericId) // [MODIFICADO]
-          .maybeSingle() // [MODIFICADO]
+    ;(async () => {
+      try {
+        const { data: existing, error: selectError } = await supabase
+          .from("desafios_usuario")
+          .select("id,completado")
+          .eq("usuario_id", userId)
+          .eq("desafio_id", numericId)
+          .maybeSingle()
 
-        if (selectError) { // [MODIFICADO]
-          console.error("Error leyendo desafios_usuario:", selectError) // [MODIFICADO]
-          return // [MODIFICADO]
-        } // [MODIFICADO]
+        if (selectError) {
+          console.error("Error leyendo desafios_usuario:", selectError)
+          return
+        }
 
-        if (existing) { // [MODIFICADO]
-          if (existing.completado) return // [MODIFICADO]
-          const { error: updateError } = await supabase // [MODIFICADO]
-            .from("desafios_usuario") // [MODIFICADO]
-            .update({ completado: true }) // [MODIFICADO]
-            .eq("id", existing.id) // [MODIFICADO]
-          if (updateError) { // [MODIFICADO]
-            console.error("Error actualizando desafios_usuario:", updateError) // [MODIFICADO]
-          } // [MODIFICADO]
-          return // [MODIFICADO]
-        } // [MODIFICADO]
+        if (existing) {
+          if (existing.completado) return
+          const { error: updateError } = await supabase
+            .from("desafios_usuario")
+            .update({ completado: true })
+            .eq("id", existing.id)
+          if (updateError) {
+            console.error("Error actualizando desafios_usuario:", updateError)
+          }
+          return
+        }
 
-        const { error: insertError } = await supabase // [MODIFICADO]
-          .from("desafios_usuario") // [MODIFICADO]
-          .insert({ usuario_id: userId, desafio_id: numericId, completado: true }) // [MODIFICADO]
-        if (insertError) { // [MODIFICADO]
-          console.error("Error insertando desafios_usuario:", insertError) // [MODIFICADO]
-        } // [MODIFICADO]
-      } catch (error) { // [MODIFICADO]
-        console.error("Error inesperado guardando desafios_usuario:", error) // [MODIFICADO]
-      } // [MODIFICADO]
-    })() // [MODIFICADO]
-  }, [userId]) // [MODIFICADO]
+        const { error: insertError } = await supabase
+          .from("desafios_usuario")
+          .insert({ usuario_id: userId, desafio_id: numericId, completado: true })
+        if (insertError) {
+          console.error("Error insertando desafios_usuario:", insertError)
+        }
+      } catch (error) {
+        console.error("Error inesperado guardando desafios_usuario:", error)
+      }
+    })()
+  }, [userId])
 
-  // [MODIFICADO] Reiniciar desafíos a incompletos y cartas a no coleccionadas
   const handleResetChallenges = useCallback(() => {
     setChallenges((prev) => prev.map((c) => ({ ...c, completed: false })))
 
-    if (!userId) return // [MODIFICADO]
+    if (!userId) return
 
-    ;(async () => { // [MODIFICADO]
-      try { // [MODIFICADO]
-        const { error } = await supabase // [MODIFICADO]
-          .from("desafios_usuario") // [MODIFICADO]
-          .update({ completado: false }) // [MODIFICADO]
-          .eq("usuario_id", userId) // [MODIFICADO]
-        if (error) { // [MODIFICADO]
-          console.error("Error reseteando desafios_usuario:", error) // [MODIFICADO]
-        } // [MODIFICADO]
-      } catch (error) { // [MODIFICADO]
-        console.error("Error inesperado reseteando desafios_usuario:", error) // [MODIFICADO]
-      } // [MODIFICADO]
-    })() // [MODIFICADO]
-  }, [userId]) // [MODIFICADO]
+    ;(async () => {
+      try {
+        const { error } = await supabase
+          .from("desafios_usuario")
+          .update({ completado: false })
+          .eq("usuario_id", userId)
+        if (error) {
+          console.error("Error reseteando desafios_usuario:", error)
+        }
+      } catch (error) {
+        console.error("Error inesperado reseteando desafios_usuario:", error)
+      }
+    })()
+  }, [userId])
 
   const handleResetCollection = useCallback(() => {
     setCollectionCards((prev) => prev.map((c) => ({ ...c, collected: false })))
     setBoardCards((prev) => prev.map((c) => ({ ...c, collected: false })))
 
-    if (!userId) return // [MODIFICADO]
+    if (!userId) return
 
-    ;(async () => { // [MODIFICADO]
-      try { // [MODIFICADO]
-        const { error } = await supabase // [MODIFICADO]
-          .from("coleccion") // [MODIFICADO]
-          .update({ desbloqueada: false }) // [MODIFICADO]
-          .eq("usuario_id", userId) // [MODIFICADO]
-        if (error) { // [MODIFICADO]
-          console.error("Error reseteando coleccion:", error) // [MODIFICADO]
-        } // [MODIFICADO]
-      } catch (error) { // [MODIFICADO]
-        console.error("Error inesperado reseteando coleccion:", error) // [MODIFICADO]
-      } // [MODIFICADO]
-    })() // [MODIFICADO]
-  }, [userId]) // [MODIFICADO]
+    ;(async () => {
+      try {
+        const { error } = await supabase
+          .from("coleccion")
+          .update({ desbloqueada: false })
+          .eq("usuario_id", userId)
+        if (error) {
+          console.error("Error reseteando coleccion:", error)
+        }
+      } catch (error) {
+        console.error("Error inesperado reseteando coleccion:", error)
+      }
+    })()
+  }, [userId])
 
-  useEffect(() => { // [MODIFICADO]
-    if (!userId) return // [MODIFICADO]
+  useEffect(() => {
+    if (!userId) return
 
-    ;(async () => { // [MODIFICADO]
-      try { // [MODIFICADO]
-        const { data: coleccionRows, error: coleccionError } = await supabase // [MODIFICADO]
-          .from("coleccion") // [MODIFICADO]
-          .select("carta_id,desbloqueada") // [MODIFICADO]
-          .eq("usuario_id", userId) // [MODIFICADO]
-          .eq("desbloqueada", true) // [MODIFICADO]
+    ;(async () => {
+      try {
+        const { data: coleccionRows, error: coleccionError } = await supabase
+          .from("coleccion")
+          .select("carta_id,desbloqueada")
+          .eq("usuario_id", userId)
+          .eq("desbloqueada", true)
 
-        if (coleccionError) { // [MODIFICADO]
-          console.error("Error cargando coleccion:", coleccionError) // [MODIFICADO]
-        } else if (coleccionRows) { // [MODIFICADO]
-          const collectedIds = new Set( // [MODIFICADO]
-            coleccionRows.map((row: { carta_id: number }) => `card-${row.carta_id}`) // [MODIFICADO]
-          ) // [MODIFICADO]
-          setCollectionCards((prev) => // [MODIFICADO]
-            prev.map((c) => (collectedIds.has(c.id) ? { ...c, collected: true } : c)) // [MODIFICADO]
-          ) // [MODIFICADO]
-          setBoardCards((prev) => // [MODIFICADO]
-            prev.map((c) => (collectedIds.has(c.id) ? { ...c, collected: true } : c)) // [MODIFICADO]
-          ) // [MODIFICADO]
-        } // [MODIFICADO]
+        if (coleccionError) {
+          console.error("Error cargando coleccion:", coleccionError)
+        } else if (coleccionRows) {
+          const collectedIds = new Set(
+            coleccionRows.map((row: { carta_id: number }) => `card-${row.carta_id}`)
+          )
+          setCollectionCards((prev) =>
+            prev.map((c) => (collectedIds.has(c.id) ? { ...c, collected: true } : c))
+          )
+          setBoardCards((prev) =>
+            prev.map((c) => (collectedIds.has(c.id) ? { ...c, collected: true } : c))
+          )
+        }
 
-        const { data: desafiosRows, error: desafiosError } = await supabase // [MODIFICADO]
-          .from("desafios_usuario") // [MODIFICADO]
-          .select("desafio_id,completado") // [MODIFICADO]
-          .eq("usuario_id", userId) // [MODIFICADO]
-          .eq("completado", true) // [MODIFICADO]
+        const { data: desafiosRows, error: desafiosError } = await supabase
+          .from("desafios_usuario")
+          .select("desafio_id,completado")
+          .eq("usuario_id", userId)
+          .eq("completado", true)
 
-        if (desafiosError) { // [MODIFICADO]
-          console.error("Error cargando desafios_usuario:", desafiosError) // [MODIFICADO]
-        } else if (desafiosRows) { // [MODIFICADO]
-          const completedIds = new Set( // [MODIFICADO]
-            desafiosRows.map((row: { desafio_id: number }) => `challenge-${row.desafio_id}`) // [MODIFICADO]
-          ) // [MODIFICADO]
-          setChallenges((prev) => // [MODIFICADO]
-            prev.map((c) => (completedIds.has(c.id) ? { ...c, completed: true } : c)) // [MODIFICADO]
-          ) // [MODIFICADO]
-        } // [MODIFICADO]
-      } catch (error) { // [MODIFICADO]
-        console.error("Error inesperado cargando progreso desde Supabase:", error) // [MODIFICADO]
-      } // [MODIFICADO]
-    })() // [MODIFICADO]
-  }, [userId]) // [MODIFICADO]
+        if (desafiosError) {
+          console.error("Error cargando desafios_usuario:", desafiosError)
+        } else if (desafiosRows) {
+          const completedIds = new Set(
+            desafiosRows.map((row: { desafio_id: number }) => `challenge-${row.desafio_id}`)
+          )
+          setChallenges((prev) =>
+            prev.map((c) => (completedIds.has(c.id) ? { ...c, completed: true } : c))
+          )
+        }
+      } catch (error) {
+        console.error("Error inesperado cargando progreso desde Supabase:", error)
+      }
+    })()
+  }, [userId])
 
-  if (!authListo || !autenticado) { // [MODIFICADO]
+  function handleCodeReady(code: string) { // [MODIFICADO]
+    setUserCode(code) // [MODIFICADO]
+  } // [MODIFICADO]
+
+  if (cargando) { // [MODIFICADO]
     return ( // [MODIFICADO]
-      <div className="flex min-h-dvh flex-col bg-background"> {/* [MODIFICADO] */} 
-        <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-6"> {/* [MODIFICADO] */} 
-          <AuthGate onAuthed={() => {}} /> {/* [MODIFICADO] */} 
-        </main> {/* [MODIFICADO] */} 
-        <BottomTabs activeTab={activeTab} onTabChange={setActiveTab} /> {/* [MODIFICADO] */} 
+      <div className="flex min-h-dvh flex-col bg-background"> {/* [MODIFICADO] */}
+        <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-6 flex items-center justify-center"> {/* [MODIFICADO] */}
+          <p className="text-muted-foreground">Cargando...</p> {/* [MODIFICADO] */}
+        </main> {/* [MODIFICADO] */}
+      </div> // [MODIFICADO]
+    ) // [MODIFICADO]
+  } // [MODIFICADO]
+
+  if (!userCode) { // [MODIFICADO]
+    return ( // [MODIFICADO]
+      <div className="flex min-h-dvh flex-col bg-background"> {/* [MODIFICADO] */}
+        <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-6"> {/* [MODIFICADO] */}
+          <AuthGate onCodeReady={handleCodeReady} /> {/* [MODIFICADO] */}
+        </main> {/* [MODIFICADO] */}
       </div> // [MODIFICADO]
     ) // [MODIFICADO]
   } // [MODIFICADO]
