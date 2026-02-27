@@ -12,12 +12,12 @@ export async function GET(request: NextRequest) {
 
   if (toCode) {
     const status = searchParams.get("status") ?? undefined
-    const trades = getTradesByToCode(toCode, status as "pending" | "accepted" | "cancelled" | undefined)
+    const trades = await getTradesByToCode(toCode, status as "pending" | "accepted" | "cancelled" | undefined) // [MODIFICADO]
     return NextResponse.json(trades)
   }
 
   if (fromCode) {
-    const trades = getTradesByFromCode(fromCode)
+    const trades = await getTradesByFromCode(fromCode) // [MODIFICADO]
     return NextResponse.json(trades)
   }
 
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const trade = createTrade(fromCode, toCode, cardId)
+    const trade = await createTrade(fromCode, toCode, cardId) // [MODIFICADO]
     return NextResponse.json(trade)
   } catch {
     return NextResponse.json(

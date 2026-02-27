@@ -16,7 +16,7 @@ export async function POST(
     )
   }
 
-  const trade = acceptTrade(id, toCode)
+  const trade = await acceptTrade(id, toCode) // [MODIFICADO]
   if (!trade) {
     return NextResponse.json(
       { error: "Intercambio no encontrado o ya aceptado" },

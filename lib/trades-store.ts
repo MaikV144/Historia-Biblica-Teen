@@ -1,7 +1,6 @@
 /**
  * Almacén de intercambios por internet.
- * En desarrollo (next dev) usa memoria en el mismo proceso.
- * Para producción con múltiples instancias, sustituir por Vercel KV o una base de datos.
+ * Persistente en Supabase (producción y desarrollo). // [MODIFICADO]
  */
 
 export type TradeStatus = "pending" | "accepted" | "cancelled"
@@ -15,42 +14,119 @@ export interface Trade {
   createdAt: string
 }
 
-const trades: Trade[] = []
+import { supabase } from "@/lib/supabase-client" // [MODIFICADO]
 
-function generateId(): string {
+function generateId(): string { // [MODIFICADO]
   return `trade-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
-export function createTrade(fromCode: string, toCode: string, cardId: string): Trade {
-  const trade: Trade = {
-    id: generateId(),
-    fromCode,
-    toCode,
-    cardId,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  }
-  trades.push(trade)
-  return trade
-}
+export async function createTrade(fromCode: string, toCode: string, cardId: string): Promise<Trade> { // [MODIFICADO]
+  const id = generateId() // [MODIFICADO]
+  const createdAt = new Date().toISOString() // [MODIFICADO]
+  const { data, error } = await supabase // [MODIFICADO]
+    .from("intercambios_internet") // [MODIFICADO]
+    .insert({ // [MODIFICADO]
+      id, // [MODIFICADO]
+      from_code: fromCode, // [MODIFICADO]
+      to_code: toCode, // [MODIFICADO]
+      card_id: cardId, // [MODIFICADO]
+      status: "pending", // [MODIFICADO]
+      created_at: createdAt, // [MODIFICADO]
+    }) // [MODIFICADO]
+    .select("id,from_code,to_code,card_id,status,created_at") // [MODIFICADO]
+    .single() // [MODIFICADO]
+  if (error || !data) { // [MODIFICADO]
+    throw new Error(error?.message ?? "No se pudo crear el intercambio") // [MODIFICADO]
+  } // [MODIFICADO]
+  return { // [MODIFICADO]
+    id: data.id, // [MODIFICADO]
+    fromCode: data.from_code, // [MODIFICADO]
+    toCode: data.to_code, // [MODIFICADO]
+    cardId: data.card_id, // [MODIFICADO]
+    status: data.status as TradeStatus, // [MODIFICADO]
+    createdAt: new Date(data.created_at).toISOString(), // [MODIFICADO]
+  } // [MODIFICADO]
+} // [MODIFICADO]
 
-export function getTradesByToCode(toCode: string, status?: TradeStatus): Trade[] {
-  return trades.filter(
-    (t) => t.toCode === toCode && (status === undefined || t.status === status)
-  )
-}
+export async function getTradesByToCode(toCode: string, status?: TradeStatus): Promise<Trade[]> { // [MODIFICADO]
+  let q = supabase // [MODIFICADO]
+    .from("intercambios_internet") // [MODIFICADO]
+    .select("id,from_code,to_code,card_id,status,created_at") // [MODIFICADO]
+    .eq("to_code", toCode) // [MODIFICADO]
+    .order("created_at", { ascending: false }) // [MODIFICADO]
+  if (status !== undefined) { // [MODIFICADO]
+    q = q.eq("status", status) // [MODIFICADO]
+  } // [MODIFICADO]
+  const { data, error } = await q // [MODIFICADO]
+  if (error || !data) { // [MODIFICADO]
+    return [] // [MODIFICADO]
+  } // [MODIFICADO]
+  return data.map((row) => ({ // [MODIFICADO]
+    id: row.id, // [MODIFICADO]
+    fromCode: row.from_code, // [MODIFICADO]
+    toCode: row.to_code, // [MODIFICADO]
+    cardId: row.card_id, // [MODIFICADO]
+    status: row.status as TradeStatus, // [MODIFICADO]
+    createdAt: new Date(row.created_at).toISOString(), // [MODIFICADO]
+  })) // [MODIFICADO]
+} // [MODIFICADO]
 
-export function getTradesByFromCode(fromCode: string): Trade[] {
-  return trades.filter((t) => t.fromCode === fromCode)
-}
+export async function getTradesByFromCode(fromCode: string): Promise<Trade[]> { // [MODIFICADO]
+  const { data, error } = await supabase // [MODIFICADO]
+    .from("intercambios_internet") // [MODIFICADO]
+    .select("id,from_code,to_code,card_id,status,created_at") // [MODIFICADO]
+    .eq("from_code", fromCode) // [MODIFICADO]
+    .order("created_at", { ascending: false }) // [MODIFICADO]
+  if (error || !data) { // [MODIFICADO]
+    return [] // [MODIFICADO]
+  } // [MODIFICADO]
+  return data.map((row) => ({ // [MODIFICADO]
+    id: row.id, // [MODIFICADO]
+    fromCode: row.from_code, // [MODIFICADO]
+    toCode: row.to_code, // [MODIFICADO]
+    cardId: row.card_id, // [MODIFICADO]
+    status: row.status as TradeStatus, // [MODIFICADO]
+    createdAt: new Date(row.created_at).toISOString(), // [MODIFICADO]
+  })) // [MODIFICADO]
+} // [MODIFICADO]
 
-export function getTradeById(id: string): Trade | undefined {
-  return trades.find((t) => t.id === id)
-}
+export async function getTradeById(id: string): Promise<Trade | undefined> { // [MODIFICADO]
+  const { data, error } = await supabase // [MODIFICADO]
+    .from("intercambios_internet") // [MODIFICADO]
+    .select("id,from_code,to_code,card_id,status,created_at") // [MODIFICADO]
+    .eq("id", id) // [MODIFICADO]
+    .maybeSingle() // [MODIFICADO]
+  if (error || !data) { // [MODIFICADO]
+    return undefined // [MODIFICADO]
+  } // [MODIFICADO]
+  return { // [MODIFICADO]
+    id: data.id, // [MODIFICADO]
+    fromCode: data.from_code, // [MODIFICADO]
+    toCode: data.to_code, // [MODIFICADO]
+    cardId: data.card_id, // [MODIFICADO]
+    status: data.status as TradeStatus, // [MODIFICADO]
+    createdAt: new Date(data.created_at).toISOString(), // [MODIFICADO]
+  } // [MODIFICADO]
+} // [MODIFICADO]
 
-export function acceptTrade(id: string, toCode: string): Trade | null {
-  const trade = trades.find((t) => t.id === id)
-  if (!trade || trade.status !== "pending" || trade.toCode !== toCode) return null
-  trade.status = "accepted"
-  return trade
-}
+export async function acceptTrade(id: string, toCode: string): Promise<Trade | null> { // [MODIFICADO]
+  const { data, error } = await supabase // [MODIFICADO]
+    .from("intercambios_internet") // [MODIFICADO]
+    .update({ status: "accepted", accepted_at: new Date().toISOString() }) // [MODIFICADO]
+    .eq("id", id) // [MODIFICADO]
+    .eq("to_code", toCode) // [MODIFICADO]
+    .eq("status", "pending") // [MODIFICADO]
+    .select("id,from_code,to_code,card_id,status,created_at") // [MODIFICADO]
+    .maybeSingle() // [MODIFICADO]
+  if (error || !data) { // [MODIFICADO]
+    return null // [MODIFICADO]
+  } // [MODIFICADO]
+  return { // [MODIFICADO]
+    id: data.id, // [MODIFICADO]
+    fromCode: data.from_code, // [MODIFICADO]
+    toCode: data.to_code, // [MODIFICADO]
+    cardId: data.card_id, // [MODIFICADO]
+    status: data.status as TradeStatus, // [MODIFICADO]
+    createdAt: new Date(data.created_at).toISOString(), // [MODIFICADO]
+  } // [MODIFICADO]
+} // [MODIFICADO]
