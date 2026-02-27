@@ -7,7 +7,6 @@ import { BoardsTab } from "@/components/boards-tab"
 import { ContactsTab } from "@/components/contacts-tab"
 import { ChallengesTab } from "@/components/challenges-tab"
 import { AuthGate } from "@/components/auth-gate" // [MODIFICADO]
-import { getUserCode } from "@/lib/user-code" // [MODIFICADO]
 import {
   type Card,
   type Contact,
@@ -17,7 +16,7 @@ import {
   INITIAL_CONTACTS,
   INITIAL_CHALLENGES,
 } from "@/lib/card-data"
-import { getOrCreateUsuarioByDeviceId } from "@/lib/user-repository" // [MODIFICADO]
+import { getOrCreateUsuarioByAuthUserId } from "@/lib/user-repository" // [MODIFICADO]
 import { supabase } from "@/lib/supabase-client"
 
 export default function Home() {
@@ -27,25 +26,53 @@ export default function Home() {
   const [contacts, setContacts] = useState<Contact[]>(INITIAL_CONTACTS)
   const [challenges, setChallenges] = useState<Challenge[]>(INITIAL_CHALLENGES)
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null)
-  const [userCode, setUserCode] = useState<string | null>(null)
+  const [authUserId, setAuthUserId] = useState<string | null>(null) // [MODIFICADO]
   const [userId, setUserId] = useState<number | null>(null)
   const [cargando, setCargando] = useState(true) // [MODIFICADO]
+  const [userCode, setUserCode] = useState<string | null>(null) // [MODIFICADO]
 
-  useEffect(() => { // [MODIFICADO]
-    const code = getUserCode() // [MODIFICADO]
-    if (code) { // [MODIFICADO]
-      setUserCode(code) // [MODIFICADO]
-    } // [MODIFICADO]
-    setCargando(false) // [MODIFICADO]
-  }, []) // [MODIFICADO]
+  // [MODIFICADO] Verificar sesión existente al cargar
+  useEffect(() => {
+    let mounted = true
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return
+      if (session?.user) {
+        setAuthUserId(session.user.id)
+      }
+      setCargando(false)
+    })
 
-  useEffect(() => { // [MODIFICADO]
-    if (!userCode) return // [MODIFICADO]
-    ;(async () => { // [MODIFICADO]
-      const usuario = await getOrCreateUsuarioByDeviceId(userCode) // [MODIFICADO]
-      setUserId(usuario ? usuario.id : null) // [MODIFICADO]
-    })() // [MODIFICADO]
-  }, [userCode]) // [MODIFICADO]
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+      if (session?.user) {
+        setAuthUserId(session.user.id)
+      } else {
+        setAuthUserId(null)
+        setUserId(null)
+      }
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  // [MODIFICADO] Cuando hay authUserId, buscar o crear usuario en tabla usuarios
+  useEffect(() => {
+    if (!authUserId) {
+      setUserId(null)
+      setUserCode(null)
+      return
+    }
+    ;(async () => {
+      const usuario = await getOrCreateUsuarioByAuthUserId(authUserId)
+      if (usuario) {
+        setUserId(usuario.id)
+        setUserCode(usuario.codigo_amigo ?? `USER${usuario.id}`)
+      }
+    })()
+  }, [authUserId])
 
   // Sincronizar foto de perfil al servidor para que otros la vean
   useEffect(() => {
@@ -245,6 +272,7 @@ export default function Home() {
     })()
   }, [userId])
 
+  // [MODIFICADO] Cargar progreso cuando userId cambia
   useEffect(() => {
     if (!userId) return
 
@@ -292,29 +320,41 @@ export default function Home() {
     })()
   }, [userId])
 
-  function handleCodeReady(code: string) { // [MODIFICADO]
-    setUserCode(code) // [MODIFICADO]
-  } // [MODIFICADO]
+  // [MODIFICADO] Callback cuando el usuario se autentica desde AuthGate
+  function handleAuthReady(id: string) {
+    setAuthUserId(id)
+  }
 
-  if (cargando) { // [MODIFICADO]
-    return ( // [MODIFICADO]
-      <div className="flex min-h-dvh flex-col bg-background"> {/* [MODIFICADO] */}
-        <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-6 flex items-center justify-center"> {/* [MODIFICADO] */}
-          <p className="text-muted-foreground">Cargando...</p> {/* [MODIFICADO] */}
-        </main> {/* [MODIFICADO] */}
-      </div> // [MODIFICADO]
-    ) // [MODIFICADO]
-  } // [MODIFICADO]
+  // [MODIFICADO] Cerrar sesión
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    setAuthUserId(null)
+    setUserId(null)
+    setUserCode(null)
+    setCollectionCards(INITIAL_CARDS)
+    setBoardCards(INITIAL_CARDS)
+    setChallenges(INITIAL_CHALLENGES)
+  }
 
-  if (!userCode) { // [MODIFICADO]
-    return ( // [MODIFICADO]
-      <div className="flex min-h-dvh flex-col bg-background"> {/* [MODIFICADO] */}
-        <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-6"> {/* [MODIFICADO] */}
-          <AuthGate onCodeReady={handleCodeReady} /> {/* [MODIFICADO] */}
-        </main> {/* [MODIFICADO] */}
-      </div> // [MODIFICADO]
-    ) // [MODIFICADO]
-  } // [MODIFICADO]
+  if (cargando) {
+    return (
+      <div className="flex min-h-dvh flex-col bg-background">
+        <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-6 flex items-center justify-center">
+          <p className="text-muted-foreground">Cargando...</p>
+        </main>
+      </div>
+    )
+  }
+
+  if (!authUserId) {
+    return (
+      <div className="flex min-h-dvh flex-col bg-background">
+        <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-6">
+          <AuthGate onAuthReady={handleAuthReady} />
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
@@ -333,13 +373,14 @@ export default function Home() {
           <ContactsTab
             contacts={contacts}
             cards={boardCards}
-            userCode={userCode}
+            userCode={userCode ?? ""}
             profileAvatar={profileAvatar}
             onProfileAvatarChange={setProfileAvatar}
             onAddContact={handleAddContact}
             onTrade={handleTrade}
             onAcceptIncomingTrade={handleAcceptIncomingTrade}
             onDeleteContact={handleDeleteContact}
+            onLogout={handleLogout}
           />
         )}
         {activeTab === "challenges" && (

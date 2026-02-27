@@ -33,6 +33,7 @@ interface ContactsTabProps {
   onTrade: (contactId: string, cardId: string) => void
   onAcceptIncomingTrade: (cardId: string) => void
   onDeleteContact: (contactId: string) => void
+  onLogout?: () => void // [MODIFICADO]
 }
 
 const POLL_INTERVAL_MS = 8000
@@ -47,6 +48,7 @@ export function ContactsTab({
   onTrade,
   onAcceptIncomingTrade,
   onDeleteContact,
+  onLogout, // [MODIFICADO]
 }: ContactsTabProps) {
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showTradeDialog, setShowTradeDialog] = useState<Contact | null>(null)
@@ -226,15 +228,27 @@ export function ContactsTab({
             </div>
           )}
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setShowProfileDialog(true)}
-          className="border-pastel-blue text-foreground hover:bg-pastel-blue/30"
-        >
-          <Settings2 className="mr-1.5 size-3.5" />
-          Configurar foto
-        </Button>
+        <div className="flex gap-2"> {/* [MODIFICADO] */}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowProfileDialog(true)}
+            className="border-pastel-blue text-foreground hover:bg-pastel-blue/30"
+          >
+            <Settings2 className="mr-1.5 size-3.5" />
+            Configurar foto
+          </Button>
+          {onLogout && ( // [MODIFICADO]
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onLogout}
+              className="border-destructive/50 text-destructive hover:bg-destructive/10"
+            >
+              Salir
+            </Button>
+          )} {/* [MODIFICADO] */}
+        </div> {/* [MODIFICADO] */}
       </div>
 
       {/* Cartas recibidas por internet */}
