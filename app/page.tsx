@@ -6,6 +6,7 @@ import { CollectionTab } from "@/components/collection-tab"
 import { BoardsTab } from "@/components/boards-tab"
 import { ContactsTab } from "@/components/contacts-tab"
 import { ChallengesTab } from "@/components/challenges-tab"
+import { AuthGate } from "@/components/auth-gate" // [MODIFICADO]
 import { getOrCreateUserCode } from "@/lib/user-code" // [MODIFICADO]
 import {
   type Card,
@@ -16,7 +17,7 @@ import {
   INITIAL_CONTACTS,
   INITIAL_CHALLENGES,
 } from "@/lib/card-data" // [MODIFICADO]
-import { getOrCreateUsuarioByDeviceId, getUsuarioByAuthUserId } from "@/lib/user-repository" // [MODIFICADO]
+import { getOrCreateUsuarioByAuthUserId } from "@/lib/user-repository" // [MODIFICADO]
 import { supabase } from "@/lib/supabase-client" // [MODIFICADO]
 
 export default function Home() {
@@ -28,6 +29,8 @@ export default function Home() {
   const [profileAvatar, setProfileAvatar] = useState<string | null>(null)
   const [userCode, setUserCode] = useState<string | null>(null)
   const [userId, setUserId] = useState<number | null>(null) // [MODIFICADO]
+  const [authListo, setAuthListo] = useState(false) // [MODIFICADO]
+  const [autenticado, setAutenticado] = useState(false) // [MODIFICADO]
 
   useEffect(() => {
     setUserCode(getOrCreateUserCode()) // [MODIFICADO]
@@ -44,24 +47,45 @@ export default function Home() {
   }, [userCode, profileAvatar])
 
   useEffect(() => { // [MODIFICADO]
+    let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null // [MODIFICADO]
+
     ;(async () => { // [MODIFICADO]
-      const { data, error } = await supabase.auth.getUser() // [MODIFICADO]
-      if (error) { // [MODIFICADO]
-        console.error("Error obteniendo usuario de Auth:", error) // [MODIFICADO]
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession() // [MODIFICADO]
+      if (sessionError) { // [MODIFICADO]
+        console.error("Error obteniendo sesión:", sessionError) // [MODIFICADO]
       } // [MODIFICADO]
 
-      if (data?.user) { // [MODIFICADO]
-        const usuarioByAuth = await getUsuarioByAuthUserId(data.user.id) // [MODIFICADO]
-        if (usuarioByAuth) { // [MODIFICADO]
-          setUserId(usuarioByAuth.id) // [MODIFICADO]
-          return // [MODIFICADO]
-        } // [MODIFICADO]
+      const session = sessionData?.session ?? null // [MODIFICADO]
+      const user = session?.user ?? null // [MODIFICADO]
+      setAutenticado(!!user) // [MODIFICADO]
+
+      if (user) { // [MODIFICADO]
+        const usuario = await getOrCreateUsuarioByAuthUserId(user.id, userCode ?? undefined) // [MODIFICADO]
+        setUserId(usuario ? usuario.id : null) // [MODIFICADO]
+      } else { // [MODIFICADO]
+        setUserId(null) // [MODIFICADO]
       } // [MODIFICADO]
 
-      if (!userCode) return // [MODIFICADO]
-      const usuarioByDevice = await getOrCreateUsuarioByDeviceId(userCode) // [MODIFICADO]
-      setUserId(usuarioByDevice ? usuarioByDevice.id : null) // [MODIFICADO]
+      setAuthListo(true) // [MODIFICADO]
     })() // [MODIFICADO]
+
+    unsub = supabase.auth.onAuthStateChange(async (_event, session) => { // [MODIFICADO]
+      const user = session?.user ?? null // [MODIFICADO]
+      setAutenticado(!!user) // [MODIFICADO]
+      if (user) { // [MODIFICADO]
+        const usuario = await getOrCreateUsuarioByAuthUserId(user.id, userCode ?? undefined) // [MODIFICADO]
+        setUserId(usuario ? usuario.id : null) // [MODIFICADO]
+      } else { // [MODIFICADO]
+        setUserId(null) // [MODIFICADO]
+      } // [MODIFICADO]
+      setAuthListo(true) // [MODIFICADO]
+    }) // [MODIFICADO]
+
+    return () => { // [MODIFICADO]
+      if (unsub) { // [MODIFICADO]
+        unsub.data.subscription.unsubscribe() // [MODIFICADO]
+      } // [MODIFICADO]
+    } // [MODIFICADO]
   }, [userCode]) // [MODIFICADO]
 
   const handleCollectCard = useCallback((cardId: string) => {
@@ -301,6 +325,17 @@ export default function Home() {
       } // [MODIFICADO]
     })() // [MODIFICADO]
   }, [userId]) // [MODIFICADO]
+
+  if (!authListo || !autenticado) { // [MODIFICADO]
+    return ( // [MODIFICADO]
+      <div className="flex min-h-dvh flex-col bg-background"> {/* [MODIFICADO] */} 
+        <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-24 pt-6"> {/* [MODIFICADO] */} 
+          <AuthGate onAuthed={() => {}} /> {/* [MODIFICADO] */} 
+        </main> {/* [MODIFICADO] */} 
+        <BottomTabs activeTab={activeTab} onTabChange={setActiveTab} /> {/* [MODIFICADO] */} 
+      </div> // [MODIFICADO]
+    ) // [MODIFICADO]
+  } // [MODIFICADO]
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
