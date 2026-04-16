@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next'
 import { Nunito, Nunito_Sans, Shadows_Into_Light } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
 const _nunito = Nunito({ subsets: ["latin"], variable: "--font-nunito" });
@@ -45,9 +44,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className={`${_nunito.variable} ${_nunitoSans.variable} ${_shadowsIntoLight.variable} font-sans antialiased`}>
+      <body
+        className={`${_nunito.variable} ${_nunitoSans.variable} ${_shadowsIntoLight.variable} font-sans antialiased`}
+      >
         {children}
-        <Analytics />
       </body>
     </html>
   )

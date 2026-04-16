@@ -1,9 +1,8 @@
 "use client"
 
-import { Layers, LayoutGrid, Users, Trophy } from "lucide-react"
+import { Award, BookOpen, GraduationCap, Leaf } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-export type TabId = "collection" | "boards" | "contacts" | "challenges"
+import { type TabId } from "@/lib/conquistadores-data"
 
 interface BottomTabsProps {
   activeTab: TabId
@@ -11,10 +10,10 @@ interface BottomTabsProps {
 }
 
 const tabs: { id: TabId; label: string; icon: React.ElementType }[] = [
-  { id: "collection", label: "Coleccion", icon: Layers },
-  { id: "boards", label: "Tableros", icon: LayoutGrid },
-  { id: "contacts", label: "Contactos", icon: Users },
-  { id: "challenges", label: "Desafios", icon: Trophy },
+  { id: "specialties", label: "Especialidades", icon: Leaf },
+  { id: "classes", label: "Clases", icon: GraduationCap },
+  { id: "bible", label: "Biblia", icon: BookOpen },
+  { id: "masteries", label: "Maestrías", icon: Award },
 ]
 
 export function BottomTabs({ activeTab, onTabChange }: BottomTabsProps) {
@@ -22,7 +21,7 @@ export function BottomTabs({ activeTab, onTabChange }: BottomTabsProps) {
     <nav
       role="tablist"
       aria-label="Navegacion principal"
-      className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card"
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/80 bg-card/90 backdrop-blur-md supports-[backdrop-filter]:bg-card/75"
     >
       <div className="mx-auto flex max-w-lg items-stretch">
         {tabs.map((tab) => {

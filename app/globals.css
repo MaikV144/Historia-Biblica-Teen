@@ -130,7 +130,9 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply min-h-dvh text-foreground;
+    /* Alineado con el color del cielo/mapa del fondo por sección */
+    background-color: #f2e8cf;
   }
 }
 
@@ -138,4 +140,19 @@
 nextjs-portal {
   left: unset;
   top: unset;
+}
+
+/* Anunciador de rutas: fuera del flujo para no afectar layout (sigue siendo legible por lectores de pantalla) */
+next-route-announcer {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  left: 0;
+  top: 0;
 }

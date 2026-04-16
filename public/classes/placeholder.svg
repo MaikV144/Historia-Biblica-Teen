@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d4c4a8"/>
+      <stop offset="100%" stop-color="#a89b7a"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="120" fill="url(#g)"/>
+  <path fill="#6b7280" opacity="0.35" d="M0 120 L80 40 L140 90 L200 20 L280 100 L340 50 L400 85 L400 120 Z"/>
+  <text x="200" y="68" text-anchor="middle" fill="#4b5563" font-family="system-ui,sans-serif" font-size="11" font-weight="600">A�ade tu imagen en public/classes</text>
+</svg>
